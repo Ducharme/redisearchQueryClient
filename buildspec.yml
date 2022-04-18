@@ -1,0 +1,39 @@
+# Do not change version. This is the version of aws buildspec, not the version of your buldspec file.
+version: 0.2
+
+phases:
+
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...          
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG 
+
+  post_build:
+    commands:
+      - echo Pushing the Docker image...
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - echo Build completed on `date`
+
+      - echo Creating the Artifacts...
+      - echo Installing source NPM dependencies...
+      - npm install --only=production --no-optional
+      - mkdir ./dist
+      - containerid=$(docker create $IMAGE_REPO_NAME)
+      - docker cp $containerid:/home/node/app/dist/main.d.ts - > ./dist/main.d.ts
+      - docker cp $containerid:/home/node/app/dist/main.js - > ./dist/main.js
+      - docker cp $containerid:/home/node/app/dist/main.js.map - > ./dist/main.js.map
+      - docker rm -v $containerid
+
+
+artifacts:
+  name: cr_$(date +%Y-%m-%d)_$CODEBUILD_BUILD_NUMBER.zip
+  files:
+    - 'dist/*.*'
+    - 'node_modules/**/*'
