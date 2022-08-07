@@ -22,18 +22,14 @@ phases:
       - echo Build completed on `date`
 
       - echo Creating the Artifacts...
-      - echo Installing source NPM dependencies...
-      - npm install --only=production --no-optional
-      - mkdir ./dist
       - containerid=$(docker create $IMAGE_REPO_NAME)
-      - docker cp $containerid:/home/node/app/dist/main.d.ts - > ./dist/main.d.ts
-      - docker cp $containerid:/home/node/app/dist/main.js - > ./dist/main.js
-      - docker cp $containerid:/home/node/app/dist/main.js.map - > ./dist/main.js.map
+      - docker cp $containerid:/home/node/app/node_modules/ .
+      - docker cp $containerid:/home/node/app/dist/ .
       - docker rm -v $containerid
 
 
 artifacts:
-  name: cr_$(date +%Y-%m-%d)_$CODEBUILD_BUILD_NUMBER.zip
+  name: rqc_$(date +%Y-%m-%d)_$CODEBUILD_BUILD_NUMBER.zip
   files:
     - 'dist/*.*'
     - 'node_modules/**/*'

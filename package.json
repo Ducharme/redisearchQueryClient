@@ -2,7 +2,7 @@
     "name": "redisearch-query-client",
     "version": "0.0.1",
     "description": "LaFleet - Query Redisearch in TypeScript",
-    "homepage": "https://github.com/Ducharme/redisearch-query-client",
+    "homepage": "https://github.com/Ducharme/redisearchQueryClient",
     "keywords": [ "aws", "iot", "lafleet" ],
     "author": "Claude Ducharme",
     "license": "MIT",
@@ -12,9 +12,9 @@
         "tsc": "tsc -p ./tsconfig.json",
         "prepare": "npm run tsc",
         "build": "tsc",
-        "build:docker": "sudo docker build --tag redisearch-query-js:v0.01 .",
+        "build:docker": "sudo docker build --tag redisearch-query-client:v0.01 .",
         "start": "node dist/main.js",
-        "start:docker": "sudo docker run -it -d -p 3131:3131 redisearch-query-js:v0.01"
+        "start:docker": "sudo docker run -it -d -p 3131:3131 redisearch-query-client:v0.01"
     },
     "dependencies": {
         "ioredis": "^4.28.5"

@@ -2,7 +2,8 @@ const redis = require("ioredis");
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 
 const SERVER_PORT = process.env.SERVER_PORT || 3131;
-const topic = "topic_1";
+const DefaultTopic = "lafleet/devices/location/+/streaming";
+const TOPIC = process.env.TOPIC || DefaultTopic;
 
 const REDIS_HOST = process.env.REDIS_HOST || "localhost";
 const REDIS_PORT = process.env.REDIS_PORT || 6379;
@@ -118,10 +119,10 @@ async function aggregate (h3resolution: number, h3indices : string[] ) {
   try {
     console.log("Entering aggregate...");
 
-    //FT.AGGREGATE topic-h3-idx "@topic:topic_1 @h3r0:{802bfffffffffff | 802bffffffffffw }" GROUPBY 1 @h3r0 REDUCE COUNT 0 AS num_devices
+    //FT.AGGREGATE topic-h3-idx "@topic:lafleet/devices/location/+/streaming @h3r0:{802bfffffffffff | 802bffffffffffw }" GROUPBY 1 @h3r0 REDUCE COUNT 0 AS num_devices
     var h3res = "@h3r" + h3resolution;
     var h3filter = h3res + ":{ " + h3indices.join(" | ") + " }";
-    var filter = "@topic:" + topic + " " + h3filter;
+    var filter = "@topic:" + TOPIC + " " + h3filter;
     var query = ['FT.AGGREGATE', 'topic-h3-idx', filter, 'GROUPBY', 1, h3res, "REDUCE", "COUNT", 0, "AS", "num_devices"].join(" ");
     console.log("Query => " + query);
     
@@ -163,9 +164,9 @@ async function search (longitude: number, latitude : number, distance: number, d
   try {
     console.log("Entering search...");
 
-    //FT.SEARCH topic-lnglat-idx "@topic:topic_1 @lnglat:[-73 45 100 km]" NOCONTENT
+    //FT.SEARCH topic-lnglat-idx "@topic:lafleet/devices/location/+/streaming @lnglat:[-73 45 100 km]" NOCONTENT
     var lnglatFilter = `@lnglat:[ ${longitude} ${latitude} ${distance} ${distanceUnit} ]`;
-    var filter = "@topic:" + topic + " " + lnglatFilter;
+    var filter = "@topic:" + TOPIC + " " + lnglatFilter;
     console.log("Filter = " + filter);
     
     var list = await redisClient.call('FT.SEARCH', 'topic-lnglat-idx', filter, 'NOCONTENT', 'LIMIT', REDIS_LIMIT_OFFSET, REDIS_LIMIT_COUNT,
@@ -178,7 +179,7 @@ async function search (longitude: number, latitude : number, distance: number, d
       }
     );
     // 1) (integer) 23
-    // 2) "DEVLOC:test-10247715:topic_1"
+    // 2) "DEVLOC:test-10247715:lafleet/devices/location/+/streaming"
     console.log("List: " + list);
 
     for (let i = 0; i < list.length; i++) {
