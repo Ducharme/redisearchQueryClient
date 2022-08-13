@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="LaFleet WebSocket listener" />
+        <title>LaFleet</title>
+    </head>
+    <body id="box">
+        <textarea id="logs" name="logs" rows="20" cols="170"></textarea>
+    </body>
+    <script>
+        const ws = new WebSocket("ws://localhost:3132");
+        ws.addEventListener("open", () => {
+            console.log("We are connected");
+            //var payload = {'type': 'subscriptionRequest', 'streams': ['STREAMDEV:claude1', 'STREAMDEV:claude2']};
+            //var payload = {'type': 'subscriptionRequest', 'streams': ['STREAMDEV:test-001:lafleet/devices/location/+/streaming']};
+            var payload = {'type': 'subscriptionToAllRequest'};
+            var str = JSON.stringify(payload);
+            ws.send(str); 
+        });
+        
+        ws.addEventListener('message', function (event) {
+            console.log(event.data);
+            const textarea = document.getElementById('logs');
+            textarea.value += event.data + '\n';
+        });
+    </script>
+</html>

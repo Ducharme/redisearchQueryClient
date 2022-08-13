@@ -1,7 +1,7 @@
 FROM node:17-alpine3.15 AS build
 RUN mkdir -p /home/node/app
 WORKDIR /home/node/app
-COPY main.ts package.json tsconfig.json ./
+COPY *.ts package.json tsconfig.json ./
 RUN npm install --unsafe-perm
 RUN npm run-script build
 

@@ -36,3 +36,8 @@ sudo docker run -it -p 6379:6379 redis bash
 sudo docker exec -it redis-service bash
 root@72c388dc2cb8:/data# redis-cli
 ```
+
+# Test websocket
+
+curl --no-buffer --include --raw --show-error --verbose -i -N -L -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Origin: http://localhost" -H "Host: &lt;DIST_SUBDOMAIN&gt;.cloudfront.net" -H "Sec-Websocket-Version: 13" -H "Sec-WebSocket-Key: 123" https://&lt;DIST_SUBDOMAIN&gt;.cloudfront.net/query/
+wscat -L -c ws://&lt;DIST_SUBDOMAIN&gt;.cloudfront.net/query/
