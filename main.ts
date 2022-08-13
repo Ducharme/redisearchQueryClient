@@ -8,6 +8,7 @@ import { wsQueries } from './wsQueries';
 const SERVER_PORT = process.env.SERVER_PORT || 3131;
 //const WEBSOCKET_PORT = parseInt(process.env.WEBSOCKET_PORT!) || 3132;
 
+
 const server = createServer();
 //const wss = new WebSocketServer({ port: WEBSOCKET_PORT });
 const wss = new WebSocketServer({server});

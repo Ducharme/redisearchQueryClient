@@ -2,7 +2,8 @@
     "name": "redisearch-query-client",
     "version": "0.0.1",
     "description": "LaFleet - Query Redisearch in TypeScript. Caches shapes, checks matching device/shape location, and stream through websocket",
-    "homepage": "https://github.com/Ducharme/redisearch-query-client",
+    "homepage": "https://github.com/Ducharme/redisearchQueryClient",
+
     "keywords": [ "aws", "iot", "lafleet" ],
     "author": "Claude Ducharme",
     "license": "MIT",
