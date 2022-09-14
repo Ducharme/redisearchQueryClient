@@ -6,19 +6,17 @@ import { shapeCache } from './shapeCache';
 import { wsQueries } from './wsQueries';
 
 const SERVER_PORT = process.env.SERVER_PORT || 3131;
-//const WEBSOCKET_PORT = parseInt(process.env.WEBSOCKET_PORT!) || 3132;
 
 
 const server = createServer();
-//const wss = new WebSocketServer({ port: WEBSOCKET_PORT });
 const wss = new WebSocketServer({server});
 var rec = new redisClient();
 const sc = new shapeCache(rec);
 const wsq = new wsQueries(wss, rec);
+const hq = new httpQueries(rec);
 
 server.on('request', async (request: IncomingMessage, response: ServerResponse) => {
-  var handler = new httpQueries(rec);
-  handler.onRequest(request, response);
+  hq.onRequest(request, response);
 });
 
 wss.on('connection', (ws: any) => { wsq.onConnection(ws); });
@@ -33,7 +31,7 @@ const run = async () => {
   await rec.ping();
 
   // Download all shapes from Redis
-  sc.downloadAllShapeTypes();
+  await sc.downloadAllActiveShapes();
 }
 
 run();

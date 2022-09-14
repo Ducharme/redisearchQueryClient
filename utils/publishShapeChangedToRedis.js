@@ -15,12 +15,12 @@ client.on("error", function(error) { console.error(error); });
 
 async function publishToChannel() {
     var res = await client.publish("ShapeChanged", "LIMIT");
-    console.log("Result: " + res);
+    console.log("Publish to ShapeChanged returned " + res);
 }
 
 const run = async () => {
-    await redisClient.connect();
-    await redisClient.ping();
+    await client.connect();
+    await client.ping();
 
     setInterval(publishToChannel, 10000);
 }

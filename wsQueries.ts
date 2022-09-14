@@ -138,7 +138,7 @@ export class wsQueries {
         }
       }
   
-      // TODO: Remove server subscription to the stream(s) if no more client is listening
+      // TODO: Future optimization -> Remove server subscription to the stream(s) if no more client is listening 
   
     });
   }
@@ -150,7 +150,7 @@ export class wsQueries {
   public processMessage(stream: string, message: string) {
     console.log(`Stream ${stream} received message ${message}`);
   
-    // TODO: When an update is received, check if matches a shape location
+    // TODO: When an update is received, check if matches a shape location to send a special event to the client
 
     // Send update to subscribed clients
     const deviceId = stream.split(':')[1];

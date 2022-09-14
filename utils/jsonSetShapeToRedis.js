@@ -12,18 +12,49 @@ const params = {
 };
 const client = redis.createClient(params);
 client.on("error", function(error) { console.error(error); });
+const shapeFiles = ['./tests/paris.json', './tests/montreal.json'];
 
+async function publishToChannel() {
+    var res = await client.publish("ShapeChanged", "LIMIT");
+    console.log("publishToChannel returned " + res);
+}
 
 const run = async () => {
-    //const file = '/home/claude/GitHub3/sqsShapeConsumerToRedisearch/tests/montreal.json';
-    //const key = 'SHAPELOC:47db1f7b-5c0f-4f85-88d7-2bc3f83eaaf4';
-    const file = '/home/claude/GitHub3/sqsShapeConsumerToRedisearch/tests/paris.json';
-    const key = 'SHAPELOC:4308c950-9d3c-4ba3-ace0-a54c1f279058';
-    const shape = fs.readFileSync(file, {encoding:'utf8', flag:'r'});
+    await client.connect();
+    await client.ping();
 
-    var res = await this.client.json.set(key, '$', shape)
-        .catch((err) => console.log(`createShape failed for ${key} -> ${err}`));
-    console.log("Result: " + res);
+    var results = [];
+    var shapeKeys = [];
+    for (const shapeFile of shapeFiles) {
+        console.log("Loading shape from " + shapeFile);
+        const shape = fs.readFileSync(shapeFile, {encoding:'utf8', flag:'r'});
+        const shape1 = shape.replaceAll("\\\\\\", "").replaceAll("\\\\", "").replaceAll("\\", "")
+            .replaceAll("\r", "").replaceAll("\n", "").replaceAll("\t", "");
+        const shape2 = shape1.replaceAll("        ", " ").replaceAll("       ", " ").replaceAll("      ", " ")
+            .replaceAll("     ", " ").replaceAll("    ", " ").replaceAll("   ", " ").replaceAll("  ", " ");
+        const json = JSON.parse(shape2);
+        const key = 'SHAPELOC:' + json.shapeId;
+        shapeKeys.push(key);
+
+        var res = await client.json.set(key, '$', json)
+            .catch((err) => console.log(`createShape failed for ${key} -> ${err}`));
+        console.log("json.set returned " + res);
+        results.push(res);
+    }
+
+    for (const key of shapeKeys) {
+        console.log("Loading shape from redis " + key);
+        var res = await client.json.get(key, '$')
+            .catch((err) => console.log(`getShape failed for ${key} -> ${err}`));
+        console.log(JSON.stringify(res));
+    }
+
+    await publishToChannel();
+
+    for (const result in results)
+        if (result != "OK")
+            process.exit(1);
+    process.exit(0);
 }
 
 run();

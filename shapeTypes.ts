@@ -27,24 +27,6 @@ export type fileDiffList = {
     deletedToRemove: string[];
 };
 
-export interface BaseShape {
-    shapeId: string,
-    name: string,
-    status: string,
-}
-
-export interface Shape extends BaseShape {
-    type: string,
-    createdAt: string,
-    modifiedAt: string,
-    deletedAt: string,
-    shapeVersion: string,
-    schemaVersion: string,
-    polygon: [[number, number]],
-    filter: H3Resolutions,
-    shape: H3Resolutions
-}
-
 export interface H3Resolutions {
     h3r0: string[],
     h3r1: string[],
@@ -64,9 +46,41 @@ export interface H3Resolutions {
     h3r15: string[]
 }
 
-export interface ShapeResult extends BaseShape {};
-export interface ShapeKvp {id: string, value: ShapeResult};
-export interface ShapeArray extends Array<ShapeKvp> { };
+export interface BaseShape {
+    shapeId: string,
+    name: string,
+    status: string,
+    type: string
+}
+
+export interface Shape extends BaseShape {
+    createdAt: string,
+    modifiedAt: string,
+    deletedAt: string,
+    shapeVersion: string,
+    schemaVersion: string,
+    polygon: [[number, number]],
+    filter: H3Resolutions,
+    shape: H3Resolutions
+}
+
+export interface BaseShapeKvp {id: string, value: BaseShape};
+export interface BaseShapeArray extends Array<BaseShapeKvp> { };
+
+export interface PolygonShape extends BaseShape {
+    polygon: number[][]
+}
+
+export interface PolygonShapeKvp {id: string, value: PolygonShape};
+export interface PolygonShapeArray extends Array<PolygonShapeKvp> { };
+
+export interface H3PolygonShape extends BaseShape {
+    h3polygon: number[][]
+}
+
+export interface H3PolygonShapeKvp {id: string, value: H3PolygonShape};
+export interface H3PolygonShapeArray extends Array<H3PolygonShapeKvp> { };
+
 
 export const enum ShapeType {
     Parking="PARKING",
