@@ -1,4 +1,16 @@
 
+# Endpoints
+
+[OpenAPI redisearchQueryClient](https://app.swaggerhub.com/apis/LaFleet/redisearchQueryClient/0.1)
+
+* GET /
+* GET /health
+* POST /h3/aggregate/devices/count
+* POST /h3/fetch/shapes/h3polygon
+* POST /h3/fetch/shapes/polygon
+* POST /h3/search/shapes/list
+* POST /radius/search/devices/list
+
 
 # Playing with docker locally
 
