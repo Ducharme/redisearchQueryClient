@@ -11,6 +11,17 @@
 * POST /h3/search/shapes/list
 * POST /radius/search/devices/list
 
+## WebSocket to subscribe to devices' updates
+
+```
+const ws = new WebSocket("ws://$lt;server$gt;:3132");
+// Stream name is cmade from -> STREAMDEV:<DeviceId>:<Topic>
+var payload = {'type': 'subscriptionRequest', 'streams': ['STREAMDEV:test-001:lafleet/devices/location/+/streaming']};
+//var payload = {'type': 'subscriptionToAllRequest'};
+ws.send(str); 
+```
+
+[Sample javascript client](utils/index.htm)
 
 # Playing with docker locally
 
