@@ -19,10 +19,13 @@ const params = {
 const client = redis.createClient(params);
 client.on("error", function(error) { console.error(error); });
 
-const topic = "lafleet/devices/location/+/streaming";
+const streamingLocationTopic = "lafleet/devices/location/+/streaming";
 var device1 = new Device(1);
 var device2 = new Device(2);
 var device3 = new Device(3);
+
+const streamId = 0;
+const state = 'ACTIVE';
 
 async function publishToRedis() {
     publishToRedisForDevice(device1);
@@ -37,7 +40,7 @@ async function publishToRedisForDevice(device) {
     const gps_lng = device.longitude;
     const gps_alt = device.altitude;
 
-    var key = `DEVLOC:${device.deviceId}:${topic}`;
+    var key = `DEVLOC:${device.deviceId}:${streamingLocationTopic}`;
     var lnglat = gps_lng.toFixed(11) + "," + gps_lat.toFixed(11);
 
     var h3r0 = h3.geoToH3(gps_lat, gps_lng, 0);
@@ -66,7 +69,7 @@ async function publishToRedisForDevice(device) {
     var h3r15 = h3.geoToH3(gps_lat, gps_lng, 15);
 
     var payload1 = {
-      'deviceId': device.deviceId, 'topic': topic,
+      'deviceId': device.deviceId, 'topic': streamingLocationTopic, 'streamId': streamId, 'state': state,
       'lnglat': lnglat, 'lng': gps_lng, 'lat': gps_lat, 'alt': gps_alt,
       'dts': device.dev_ts, 'sts': device.srv_ts, 'wts': device.wrk_ts,
       'fv': device.firmwareVersion, 'batt': device.battery, 'seq': device.seq,
@@ -76,7 +79,7 @@ async function publishToRedisForDevice(device) {
     };
 
     // "STREAMDEV:test-299212:lafleet/devices/location/+/streaming"
-    var sk = key.replace("DEVLOC", "STREAMDEV");
+    var sk = key.replace("DEVLOC", "STREAMDEV") + ':' + streamId;
     var payload2 = {
         'dts': device.dev_ts.toString(), // TODO: remove .toString() when bug is fixed
         'sts': device.srv_ts.toString(), // TODO: remove .toString() when bug is fixed
@@ -86,7 +89,8 @@ async function publishToRedisForDevice(device) {
         'lng': gps_lng.toString(), // TODO: remove .toString() when bug is fixed
         'lat': gps_lat.toString(), // TODO: remove .toString() when bug is fixed
         'alt': gps_alt.toString(), // TODO: remove .toString() when bug is fixed
-        'h3r15': h3r15
+        'h3r15': h3r15,
+        'state': state
     };
 
     let handleError1 = (error) => {
