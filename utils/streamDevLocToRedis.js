@@ -20,9 +20,17 @@ const client = redis.createClient(params);
 client.on("error", function(error) { console.error(error); });
 
 const topic = "lafleet/devices/location/+/streaming";
-var device = new Device(1);
+var device1 = new Device(1);
+var device2 = new Device(2);
+var device3 = new Device(3);
 
 async function publishToRedis() {
+    publishToRedisForDevice(device1);
+    publishToRedisForDevice(device2);
+    publishToRedisForDevice(device3);
+}
+
+async function publishToRedisForDevice(device) {
     
     device.MoveRandomly();
     const gps_lat = device.latitude;
@@ -35,6 +43,14 @@ async function publishToRedis() {
     var h3r0 = h3.geoToH3(gps_lat, gps_lng, 0);
     var h3r1 = h3.geoToH3(gps_lat, gps_lng, 1);
     var h3r2 = h3.geoToH3(gps_lat, gps_lng, 2);
+    // 822b87fffffffff","822baffffffffff
+    if (device.deviceId == "test-001")
+        h3r2 = "822b87fffffffff";
+    else if (device.deviceId == "test-002")
+        h3r2 = "822baffffffffff";
+    else
+        h3r2 = "822bafffffffffe";
+    
     var h3r3 = h3.geoToH3(gps_lat, gps_lng, 3);
     var h3r4 = h3.geoToH3(gps_lat, gps_lng, 4);
     var h3r5 = h3.geoToH3(gps_lat, gps_lng, 5);
@@ -84,6 +100,7 @@ async function publishToRedis() {
     };
 
     var promise1 = client.hSet(key, payload1).catch(handleError1);
+
     var promise2 = client.xAdd(sk, "*", payload2).catch(handleError2);
     return promise1.then(promise2)
         .then(() => {

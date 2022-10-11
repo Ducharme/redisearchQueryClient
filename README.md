@@ -3,8 +3,8 @@
 # Playing with docker locally
 
 ```
-docker build --tag redisearch-query-js:v0.01 .
-sudo docker run -it -p 3131:3131 redisearch-query-js:v0.01
+docker build --tag redisearch-query-js:v0.02 .
+sudo docker run -it -p 3131:3131 redisearch-query-js:v0.02
 ```
 
 ## Playing around

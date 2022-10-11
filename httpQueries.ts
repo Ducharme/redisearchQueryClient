@@ -210,24 +210,10 @@ export class httpQueries {
     var results : any = {"h3resolution": h3resolution, "h3indices": {}};
     try {
       console.log("Entering device aggregate...");
-  
-      var agg = await this.rec.aggregateDevices(h3resolution, h3indices);
-      console.log("Aggregate: " + agg);
 
-      for (let i = 0; i < agg.length; i++) {
-          var row = agg[i];
-          console.log(row);
-          
-          if (!Array.isArray(row))
-            continue;
-  
-          if (row.length < 4)
-            continue;
-              
-          var key = row[1];
-          var val = row[3];
-          results["h3indices"][key] = val == null || val == '' ? 0 : parseInt(val);
-      }
+      var dic = await this.rec.aggregateDevices(h3resolution, h3indices);
+      results["h3indices"] = dic;
+
       console.log("Existing device aggregate: " + JSON.stringify(results));
     } catch (err) {
       console.error("Error handling redis messages", err);
@@ -241,17 +227,8 @@ export class httpQueries {
       console.log("Entering device search...");
 
       var list = await this.rec.searchDevices(longitude, latitude, distance, distanceUnit);
-      console.log("List: " + list);
-  
-      for (let i = 0; i < list.length; i++) {
-        var val = list[i];
-        console.log(val);
+      results = list;
 
-        if (i === 0)
-          continue;
-
-        results.push(val);
-      }
       console.log("Existing device search: " + JSON.stringify(results));
     } catch (err) {
       console.error("Error while searching for devices", err);
