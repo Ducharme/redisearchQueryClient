@@ -17,9 +17,8 @@ sleep 1
 
 export SERVER_PORT=6262
 export REDIS_HOST=localhost
-export AWS_REGION=$(aws configure get region)
 
-echo ENV VARS : REDIS_HOST=$REDIS_HOST AWS_REGION=$AWS_REGION
+echo ENV VARS : REDIS_HOST=$REDIS_HOST
 node dist/main.js &
 sleep 5
 
