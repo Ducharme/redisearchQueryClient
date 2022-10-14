@@ -36,6 +36,7 @@ export class httpQueries {
   public async onRequest (request: IncomingMessage, response: ServerResponse) {
     console.log(`Request received to endpoint ${request.url} with method ${request.method}`);
 
+    // TODO: Catch errors when json is malformed to avoid service crash
     var isLocal = process.env.REDIS_HOST == "localhost";
     if (isLocal && request.method === 'OPTIONS') {
       var allowMethods = "";
