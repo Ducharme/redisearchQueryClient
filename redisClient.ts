@@ -142,7 +142,7 @@ export class redisClient {
         }).catch((err: any) => console.log(`aggregateDevices failed for ${filter} -> ${err}`));
         console.log(agg);
 
-        if (agg !== undefined && agg.total > 0 && agg.results !== undefined) {
+        if (agg !== undefined && agg.total !== undefined && agg.total > 0 && agg.results !== undefined) {
             for (var j in agg.results) {
                 var entry = agg.results[j];
                 var val = entry.count;
@@ -211,9 +211,12 @@ export class redisClient {
         console.log(`listShapes query is ${filter}`);
         var response = await this.client.ft.search(indexName, filter, { LIMIT: limit, RETURN: retArr })
             .catch((err: any) => console.log(`listShapes failed for ${filter} -> ${err}`));
-        console.log(`Getting list of ${shapeType} from redis succeeded. Total of ${response.total} shapes found.`);
-
-        return response.documents as BaseShapeArray;
+        
+        if (response !== undefined && response.total !== undefined && response.documents !== undefined) {
+            console.log(`Getting list of ${shapeType} from redis succeeded. Total of ${response.total} shapes found.`);
+            return response.documents as BaseShapeArray;
+        }
+        return new Promise<BaseShapeArray>(() => {});
     }
 
     public async searchShapes(shapeType: ShapeType | undefined, status: string | undefined, h3indices: string[]) : Promise<BaseShapeArray> {
@@ -292,13 +295,17 @@ export class redisClient {
         console.log(`${functionName} query is ${filter}`);
         var response = await this.client.ft.search(indexName, filter, { LIMIT: limit, RETURN: retArr })
             .catch((err: any) => console.log(`searchShapesImpl failed for ${filter} -> ${err}`));
-        console.log(`${functionName} redis query succeeded. Total of ${response.total} shapes found.`);
-        var bsa = response.documents as BaseShapeArray;
-        for (var i=0; i < bsa.length; i++) {
-            bsa[i].id = bsa[i].id.replace(redisClient.shapeLocKeyPrefix, "");
-            bsa[i].value.shapeId = bsa[i].value.shapeId.replace(redisClient.shapeLocKeyPrefix, "");
+
+        if (response !== undefined && response.total !== undefined && response.documents !== undefined) {
+            console.log(`${functionName} redis query succeeded. Total of ${response.total} shapes found.`);
+            var bsa = response.documents as BaseShapeArray;
+            for (var i=0; i < bsa.length; i++) {
+                bsa[i].id = bsa[i].id.replace(redisClient.shapeLocKeyPrefix, "");
+                bsa[i].value.shapeId = bsa[i].value.shapeId.replace(redisClient.shapeLocKeyPrefix, "");
+            }
+            return bsa;
         }
-        return bsa;
+        return new Promise<BaseShapeArray>(() => {});
     }
 
     private async getShapeAsPolygon(shapeId: string) : Promise<Shape | undefined> {
