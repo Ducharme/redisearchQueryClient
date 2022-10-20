@@ -59,7 +59,7 @@ curl -X POST -H "Content-Type: application/json" -d '{"shapeType":"LIMIT","statu
 # Play with redis locally
 
 ```
-sudo docker run --name redis-service -d -p 6379:6379 redis
+sudo docker run --name redis-service -d -p 6379:6379 redislabs/redisearch:latest
 redis-cli
 
 sudo docker run -it -p 6379:6379 redis bash
