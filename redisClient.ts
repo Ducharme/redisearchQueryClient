@@ -114,43 +114,35 @@ export class redisClient {
       var h3filter = h3res + ":{ " + h3indices.join(" | ") + " }";
       var filter = "@topic:" + topic + " " + h3filter;
       const indexName = 'topic-h3-idx';
-      //var agg = await redisClient.call('FT.AGGREGATE', 'topic-h3-idx', filter, 'GROUPBY', 1, h3res, "REDUCE", "COUNT", 0, "AS", "count",
       var query = ['FT.AGGREGATE', indexName, filter, 'GROUPBY', 1, h3res, "REDUCE", "COUNT", 0, "AS", "count"];
       console.log("Query => " + query.join(" "));
       
-      //var agg = await this.client.sendCommand(query).catch((err: any) => console.log(`aggregateDevices failed for ${filter} -> ${err}`));;
-      //[ 'h3r0', '80d5fffffffffff', 'count', '3' ]
-
-      // BUG: Fix with response from https://github.com/redis/node-redis/issues/2282 (ft.aggregate does not return expected values)
-      // TOFO: Once fix is ready make only one ft.aggregate call
+      var agg = await this.client.ft.aggregate(indexName, filter, {
+        STEPS: [{
+                type: AggregateSteps.GROUPBY,
+                properties: h3res,
+                REDUCE: [{
+                    type: AggregateGroupByReducers.COUNT,
+                    property: h3res,
+                    AS: 'count'
+                }]
+            }]
+      }).catch((err: any) => console.log(`aggregateDevices failed for ${filter} -> ${err}`));
+      // Existing device aggregate: {"h3resolution":"0","h3indices":{"total":1,"results":[{"h3r0":"802bfffffffffff","count":"3"}]}}
+      console.log(agg);
 
       var results : IResults = {};
-      for (var i=0; i < h3indices.length; i++) {
-        var h3index : string = h3indices[i];
-        var h3filter = h3res + ":{ " + h3index + " }";
-        var filter = "@topic:" + topic + " " + h3filter;
-        var agg = await this.client.ft.aggregate(indexName, filter, {
-            STEPS: [{
-                    type: AggregateSteps.GROUPBY,
-                    property: h3res,
-                    REDUCE: [{
-                        type: AggregateGroupByReducers.COUNT,
-                        property: h3res,
-                        AS: 'count'
-                  }]
-              }]
-        }).catch((err: any) => console.log(`aggregateDevices failed for ${filter} -> ${err}`));
-        console.log(agg);
-
-        if (agg !== undefined && agg.total > 0 && agg.results !== undefined) {
-            for (var j in agg.results) {
-                var entry = agg.results[j];
-                var val = entry.count;
-                results[h3index] = parseInt(val);
-            }
-        }
+      if (agg !== undefined && agg.total !== undefined && agg.total > 0 && agg.results !== undefined) {
+        var h3key = "h3r" + h3resolution;
+        for (var i in agg.results) {
+            var entry = agg.results[i];
+            var h3index = entry[h3key];
+            var val = entry.count;
+            results[h3index] = parseInt(val);
+         }
       }
 
+      // Returns {"h3resolution":"0","h3indices":{"802bfffffffffff":3}}
       return results;
     }
 
@@ -161,7 +153,8 @@ export class redisClient {
         var filter = "@topic:" + topic + " " + lnglatFilter;
         const indexName = 'topic-lnglat-idx';
         const limit = { from: REDIS_LIMIT_OFFSET, size: REDIS_LIMIT_COUNT };
-        console.log("Filter = " + filter);
+        var query = ['FT.SEARCH', indexName, filter, 'NOCONTENT', "LIMIT", "REDIS_LIMIT_OFFSET", "REDIS_LIMIT_COUNT"];
+        console.log("Query => " + query.join(" "));
         
         // TODO: Uncomment NOCONTENT when implemented https://github.com/redis/node-redis/blob/master/packages/search/lib/commands/SEARCH.ts#L10
         var sr = await this.client.ft.search(indexName, filter, { LIMIT: limit/*, NOCONTENT*/ })

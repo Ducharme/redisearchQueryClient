@@ -24,5 +24,8 @@ sleep 5
 
 ### Query server endpoint
 
-curl -X POST -H "Content-Type: application/json" -d '{"shapeType":"LIMIT","status":"ACTIVE","h3indices":["812bbffffffffff"]}' http://localhost:$SERVER_PORT/h3/search/shapes/list
+curl -X POST -H "Content-Type: application/json" -d '{"shapeType":"LIMIT","status":"ACTIVE","h3indices":["802bfffffffffff"]}' http://localhost:$SERVER_PORT/h3/search/shapes/list
+sleep 5
+
+curl -X POST -H "Content-Type: application/json" -d '{"h3resolution":"0","h3indices":["802bfffffffffff"]}' http://localhost:$SERVER_PORT/h3/aggregate/devices/count
 sleep 1
