@@ -24,7 +24,7 @@ wss.on('close', () => { wsq.tearDown(); });
  
 server.listen(SERVER_PORT, () => {
   console.log(`Server listening on port ${SERVER_PORT}`);
-}).on("error", (error: any) => console.log(error));
+}).on("error", (error: any) => console.error(error));
 
 const run = async () => {
   await rec.connect();
