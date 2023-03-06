@@ -63,13 +63,19 @@ class Device {
         this.seq = this.seq + 1;
     }
 
-    MoveRandomly() {
-        var randomNumber = RandomNumbers[this.randomIndex++];
+    GetNextRandom() {
+        var random = RandomNumbers[this.randomIndex++];
         if (this.randomIndex === RandomNumbers.length) {
             this.randomIndex = 0;
         }
-        
-        this.Move(randomNumber, randomNumber, randomNumber);
+        return random;
+    }
+
+    MoveRandomly() {
+        var latDelta = this.GetNextRandom();
+        var lonDelta = this.GetNextRandom();
+        var altDelta = this.GetNextRandom();
+        this.Move(latDelta, lonDelta, altDelta);
     }
 
     get getLocation() {

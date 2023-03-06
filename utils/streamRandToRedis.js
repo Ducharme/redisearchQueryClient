@@ -9,8 +9,10 @@ const params = {
 const client = redis.createClient(params);
 client.on("error", function(error) { console.error(error); });
 
-const streamIds = ["STREAMDEV:device1", "STREAMDEV:device2"];
-const streamValues = ["randomValue1", "randomValue2"];
+//const streamIds = ["STREAMDEV:device1", "STREAMDEV:device2"];
+const streamIds = ["STREAMDEV:device1"];
+//const streamValues = ["randomValue1", "randomValue2"];
+const streamValues = ["randomValue1"];
 
 async function publishToStream() {
 

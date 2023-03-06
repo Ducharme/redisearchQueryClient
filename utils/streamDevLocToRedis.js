@@ -20,17 +20,21 @@ const client = redis.createClient(params);
 client.on("error", function(error) { console.error(error); });
 
 const streamingLocationTopic = "lafleet/devices/location/+/streaming";
-var device1 = new Device(1);
-var device2 = new Device(2);
-var device3 = new Device(3);
-
 const streamId = 0;
 const state = 'ACTIVE';
+const updateFrequency = 60 * 1000; // every minute
+const numberOfDevices = 1;
+
+const devices = [];
+for (var i=0; i < numberOfDevices; i++) {
+    var dev = new Device(i+1);
+    devices.push(dev);
+}
 
 async function publishToRedis() {
-    publishToRedisForDevice(device1);
-    publishToRedisForDevice(device2);
-    publishToRedisForDevice(device3);
+    for (const dev of devices) {
+        publishToRedisForDevice(dev);
+    }
 }
 
 async function publishToRedisForDevice(device) {
@@ -120,7 +124,7 @@ const run = async () => {
     await client.connect();
     await client.ping();
 
-    setInterval(publishToRedis, 10000);
+    setInterval(publishToRedis, updateFrequency);
 }
 
 run();

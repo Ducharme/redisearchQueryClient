@@ -10,7 +10,7 @@
         <textarea id="logs" name="logs" rows="20" cols="170"></textarea>
     </body>
     <script>
-        const ws = new WebSocket("ws://localhost:3132");
+        const ws = new WebSocket("ws://localhost:6262");
         ws.addEventListener("open", () => {
             console.log("We are connected");
             //var payload = {'type': 'subscriptionRequest', 'streams': ['STREAMDEV:claude1', 'STREAMDEV:claude2']};
