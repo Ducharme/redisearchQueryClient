@@ -1,5 +1,24 @@
 #!/bin/sh
 
+REDIS_WHICH=$(which redis-cli)
+if [ -z "$REDIS_WHICH" ]; then
+  echo "redis-cli is needed to launch the tests. You can run 'sudo apt install redis-tools' to install it"
+  exit 1
+fi
+
+NODE_WHICH=$(which node)
+if [ -z "$NODE_WHICH" ]; then
+  echo "node is needed to launch the tests. You can use nvm to install it."
+  echo "See https://github.com/Ducharme/infraAsCodeCdk/blob/main/README.md#nodejs"
+  exit 2
+fi
+
+CURL_WHICH=$(which curl)
+if [ -z "$CURL_WHICH" ]; then
+  echo "curl is needed to launch the tests. You can run 'sudo apt install curl' install it."
+  exit 3
+fi
+
 sh utils/startRedisLocally.sh
 sleep 1
 
