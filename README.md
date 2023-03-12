@@ -15,7 +15,7 @@
 
 ```
 const ws = new WebSocket("ws://$lt;server$gt;:3132");
-// Stream name is made from -> STREAMDEV:<DeviceId>:<Topic>:<StreamId>
+// Stream name is made from -> STREAMDEV:<DeviceId>:<Topic>:<StreamKey>
 var payload = {'type': 'subscriptionRequest', 'streams': ['STREAMDEV:test-001:lafleet/devices/location/+/streaming:1']};
 //var payload = {'type': 'subscriptionToAllRequest'};
 ws.send(str); 

@@ -36,9 +36,8 @@ export class wsQueries {
 
   private clients = new Map<WebSocket, ConnectionMetadata>();
   private subscriptions = new Map<string, string[]>(); // streamKey, subscribers(clientMetadataIds)
-  private subscriptionsToAll = new Map<string, string[]>();
+  private subscriptionsToAll = new Map<string, string[]>(); // "*"", subscribers(clientMetadataIds)
   private readonly validMessageTypes = ['subscriptionRequest', 'subscriptionToAllRequest'];
-  private readonly processMessageHandler = (s: string, m: StreamDevLocationUpdate) => this.notifyAllSubscribers(s, m);
   private readonly AllStreamKeys = '*';
   
   constructor (wss: WebSocketServer, rc: redisClient) {
@@ -50,12 +49,12 @@ export class wsQueries {
     this.rec.assignRemovedHandler(this.oldStreamRemoved.bind(this));
   }
 
-  public newStreamCreated(streamId: string) {
-    this.rec.subscribeToStreamKey(streamId, this.processMessageHandler);
+  public newStreamCreated(streamKey: string) {
+    this.rec.subscribeToStreamKey(streamKey, this.notifyAllSubscribers.bind(this));
   }
 
-  public oldStreamRemoved(streamId: string) {
-    this.unsubscribeToStreamKey(streamId);
+  public oldStreamRemoved(streamKey: string) {
+    this.unsubscribeToStreamKey(streamKey);
   }
 
   private heartbeat(ws: any) {
@@ -186,7 +185,7 @@ export class wsQueries {
           }
         }
       }
-  
+
       // TODO: Future optimization -> Remove server subscription to the stream(s) if no more client is listening
     });
   }
@@ -195,10 +194,8 @@ export class wsQueries {
     if (this.subscriptions.keys.length > 0) {
       this.subscriptions.delete(streamKey);
     }
-      
-    if (this.subscriptionsToAll.keys.length > 0) {
-      this.subscriptionsToAll.delete(streamKey);
-    }
+
+    // TODO: Notify subscribers subscriptions and all
   }
 
   public tearDown() {
@@ -242,38 +239,13 @@ export class wsQueries {
   }
 
   public notifyOneSubscriber(subscriberId: string, message: StreamDevLocationUpdate) {
-
     var payloadAsString = JSON.stringify(message);
     console.log(`Notifying ${subscriberId} with message ${payloadAsString}`);
-    
-    // Send update to subscribed clients
-    var subscribersNotified : string[] = [];
-
-    var allSubscribers : string[] | undefined = this.subscriptionsToAll.get(this.AllStreamKeys);
-    if (allSubscribers && allSubscribers.length > 0) {
-      const subscribers = allSubscribers.filter(s => s == subscriberId);
-      for (const subscriber of subscribers) {
-        for (let [ws, metadata] of this.clients) {
-          if (subscriber == metadata.id) {
-            subscribersNotified.push(metadata.id);
-            ws.send(payloadAsString);
-          }
-        }
-      }
-    }
-  
-    if (this.subscriptions && this.subscriptions.entries.length > 0) {
-      for (const [_streamKey, subscriberIds] of this.subscriptions) {
-        for (let [ws, metadata] of this.clients) {
-          if (subscriberIds.includes(metadata.id)) {
-            if (!subscribersNotified.includes(metadata.id)) {
-              subscribersNotified.push(metadata.id);
-              ws.send(payloadAsString);
-            }
-          }
-        }
+    for (let [ws, metadata] of this.clients) {
+      if (subscriberId == metadata.id) {
+        ws.send(payloadAsString);
+        break;
       }
     }
   }
-
 }

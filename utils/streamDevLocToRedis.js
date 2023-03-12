@@ -22,7 +22,7 @@ client.on("error", function(error) { console.error(error); });
 const streamingLocationTopic = "lafleet/devices/location/+/streaming";
 const streamId = 0;
 const state = 'ACTIVE';
-const updateFrequency = 60 * 1000; // every minute
+const updateFrequency = 30 * 1000; // every minute
 const numberOfDevices = 1;
 
 const devices = [];

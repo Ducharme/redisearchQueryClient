@@ -21,3 +21,7 @@ export interface StreamDevLocationUpdate {
     h3r15: string;
     state: string;
 }
+
+export type DevLocUpdateCallback = (streamKey: string, message: StreamDevLocationUpdate) => void;
+
+export type StreamChangedHandler = (streamKey: string) => void;
