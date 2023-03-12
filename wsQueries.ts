@@ -38,7 +38,7 @@ export class wsQueries {
   private subscriptions = new Map<string, string[]>(); // streamKey, subscribers(clientMetadataIds)
   private subscriptionsToAll = new Map<string, string[]>();
   private readonly validMessageTypes = ['subscriptionRequest', 'subscriptionToAllRequest'];
-  private readonly processMessageHandler = (s: string, m: string) => this.processMessage(s, m);
+  private readonly processMessageHandler = (s: string, m: StreamDevLocationUpdate) => this.notifyAllSubscribers(s, m);
   private readonly AllStreamKeys = '*';
   
   constructor (wss: WebSocketServer, rc: redisClient) {
@@ -124,9 +124,16 @@ export class wsQueries {
                   newSubscribers.push(id);
                   this.subscriptions.set(streamKey, newSubscribers);
 
-                  this.rec.subscribeToStreamKey(streamKey, (s: string, m: string) => this.processMessage(s, m));
+                  this.rec.subscribeToStreamKey(streamKey, (s: string, m: StreamDevLocationUpdate) => this.notifyAllSubscribers(s, m));
                 } else if (!subscribers.includes(id)) {
                   subscribers.push(id);
+                }
+              }
+
+              const cache = this.rec.getAllCachedValues();
+              for (const [streamKey, payload] of cache) {
+                if (message.streams.includes(streamKey)) {
+                  this.notifyOneSubscriber(id, payload);
                 }
               }
             }
@@ -137,9 +144,14 @@ export class wsQueries {
               var newSubscribers : string[] = [];
               newSubscribers.push(id);
               this.subscriptionsToAll.set(this.AllStreamKeys, newSubscribers);
-              this.rec.subscribeToAllStreams((s: string, m: string) => this.processMessage(s, m));
+              this.rec.subscribeToAllStreams((s: string, m: StreamDevLocationUpdate) => this.notifyAllSubscribers(s, m));
             } else if (!subscribers.includes(id)) {
               subscribers.push(id);
+            }
+
+            const cache = this.rec.getAllCachedValues();
+            for (const [_streamKey, payload] of cache) {
+              this.notifyOneSubscriber(id, payload);
             }
             break;
         }
@@ -194,31 +206,12 @@ export class wsQueries {
     this.rec.shutdown();
   }
 
-  public processMessage(stream: string, message: string) {
-    console.log(`Stream ${stream} received message ${message}`);
-  
-    // TODO: When an update is received, check if matches a shape location to send a special event to the client
+  // TODO: When an update is received, check if matches a shape location to send a special event to the client
+  public notifyAllSubscribers(streamKey: string, message: StreamDevLocationUpdate) {
+    var payloadAsString = JSON.stringify(message);
+    console.log(`Stream ${streamKey} received message ${payloadAsString}`);
 
     // Send update to subscribed clients
-    const deviceId = stream.split(':')[1];
-    var msgJson = JSON.parse(message);
-    delete msgJson['sts'];
-    delete msgJson['wts'];
-    delete msgJson['rts'];
-    const dts = parseInt(msgJson.dts);
-    const seq = parseInt(msgJson.seq);
-    const lng = parseFloat(msgJson.lng);
-    const lat = parseFloat(msgJson.lat);
-    const alt = parseFloat(msgJson.alt);
-
-    // Stream STREAMDEV:test-001:lafleet/devices/location/+/streaming received message
-    //{ "dts":"1660234507577","sts":"1660234507777","wts":"1660234507977","rts":"1660234508078",
-    //  "seq":"25","lng":"-70.07602263185998","lat":"48.994533368139976","alt":"15.825645368139975",
-    //  "h3r15":"8f0e4b64016b653", "state": "ACTIVE" }
-    var payload : StreamDevLocationUpdate = {deviceId: deviceId, dts: dts, seq: seq,
-      lng: lng, lat: lat, alt: alt, h3r15: msgJson.h3r15, state: msgJson.state};
-    var payloadAsString = JSON.stringify(payload);
-    
     var subscribersNotified : string[] = [];
 
     var allSubscribers : string[] | undefined = this.subscriptionsToAll.get(this.AllStreamKeys);
@@ -233,7 +226,7 @@ export class wsQueries {
       }
     }
   
-    var subscribers : string[] | undefined = this.subscriptions.get(stream);
+    var subscribers : string[] | undefined = this.subscriptions.get(streamKey);
     if (subscribers && subscribers.length > 0) {
       for (const subscriber of subscribers) {
         for (let [ws, metadata] of this.clients) {
@@ -247,4 +240,40 @@ export class wsQueries {
       }
     }
   }
+
+  public notifyOneSubscriber(subscriberId: string, message: StreamDevLocationUpdate) {
+
+    var payloadAsString = JSON.stringify(message);
+    console.log(`Notifying ${subscriberId} with message ${payloadAsString}`);
+    
+    // Send update to subscribed clients
+    var subscribersNotified : string[] = [];
+
+    var allSubscribers : string[] | undefined = this.subscriptionsToAll.get(this.AllStreamKeys);
+    if (allSubscribers && allSubscribers.length > 0) {
+      const subscribers = allSubscribers.filter(s => s == subscriberId);
+      for (const subscriber of subscribers) {
+        for (let [ws, metadata] of this.clients) {
+          if (subscriber == metadata.id) {
+            subscribersNotified.push(metadata.id);
+            ws.send(payloadAsString);
+          }
+        }
+      }
+    }
+  
+    if (this.subscriptions && this.subscriptions.entries.length > 0) {
+      for (const [_streamKey, subscriberIds] of this.subscriptions) {
+        for (let [ws, metadata] of this.clients) {
+          if (subscriberIds.includes(metadata.id)) {
+            if (!subscribersNotified.includes(metadata.id)) {
+              subscribersNotified.push(metadata.id);
+              ws.send(payloadAsString);
+            }
+          }
+        }
+      }
+    }
+  }
+
 }

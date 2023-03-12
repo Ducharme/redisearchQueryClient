@@ -3,7 +3,7 @@ import { BaseShapeArray, H3PolygonShape, H3PolygonShapeArray, H3PolygonShapeKvp,
 import union from "@turf/union";
 import intersect from "@turf/intersect";
 import { Feature, MultiPolygon, Polygon, Position, polygon } from "@turf/turf";
-import { StreamDev } from "./deviceTypes";
+import { StreamDev, StreamDevLocationUpdate } from "./deviceTypes";
 const redis = require("redis");
 const h3 = require("h3-js");
 
@@ -28,6 +28,8 @@ interface xReadMessages {
 
 type xReadResponse = xReadMessages[];
 
+type xRevRangeResponse = xReadMessage[];
+
 export const unique = (arr: string[]) => [...new Set(arr)];
 
 export class redisClient {
@@ -46,7 +48,7 @@ export class redisClient {
     private readonly currentStreams : string[] = [];
     private streamAddedHandler: (streamId: string) => void = () => {};
     private streamRemovedHandler: (streamId: string) => void = () => {};
-    private readonly cacheLastValues = new Map<string, string>();
+    private readonly cacheLastValues = new Map<string, StreamDevLocationUpdate>();
 
     constructor() {
         this.client.on("connect", () => {
@@ -138,28 +140,28 @@ export class redisClient {
         return keys;
     }
 
-    public async subscribeToStreamKey(key: string, callback: (streamId: string, message: string) => void) {
-        console.log("subscribeToStreamKey: " + key);
+    public async subscribeToStreamKey(streamKey: string, callback: (streamId: string, message: StreamDevLocationUpdate) => void) {
+        // To get just the last element added into the stream it is enough to send:
+        // XREVRANGE key end start [COUNT count]
+        // XREVRANGE somestream + - COUNT 1
+        let xrr = await this.client.xRevRange(streamKey, "+", "-", { COUNT: 1 });
+        var xrrr = xrr as xRevRangeResponse;
+        var lastId = this.processMessages(streamKey, xrrr, callback);
+
         while (true) {
-            let lastId = "$"; // Start streaming from now, otherwise use 0-0 (would be too much for small clients)
             try {
+                // Start streaming from now "$", otherwise use 0-0 (would be too much for small clients) or lastId
                 let response : xReadResponse = await this.client.xRead(
                     //commandOptions( { isolated: true }),
-                    [{ key: key, id: lastId }], //[{ key: key, id: lastId }],
+                    [{ key: streamKey, id: lastId }], //[{ key: key, id: lastId }],
                     { COUNT: 1, BLOCK: 100 } //{ COUNT: 6, BLOCK: 500 }
-                ).catch((err: any) => console.log(`subscribeToStreamKey failed for ${key} -> ${err}`));
+                ).catch((err: any) => console.log(`subscribeToStreamKey failed for ${streamKey} -> ${err}`));
 
                 if (response) {
                     // Response is an array of streams, each containing an array of entries:
                     // [{"name": "mystream", "messages": [{"id": "1642088708425-0", "message": {"num":"999"}}]}]
                     for (const entry of response) {
-                        const lastMessage = entry.messages[entry.messages.length-1];
-                        const json = lastMessage as xReadMessage;
-                        const str = JSON.stringify(json.message);
-                        console.log(`Calling callback streamId:${entry.name}, id: ${lastMessage.id}, message:${str}`);
-                        this.cacheLastValues.set(key, str);
-                        callback(entry.name, str);
-                        lastId = lastMessage.id;
+                        lastId = this.processMessages(streamKey, entry.messages, callback);
                     }
                 } else {
                     // Response is null, we have read everything that is in the stream right now...
@@ -170,29 +172,40 @@ export class redisClient {
         }
     }
 
-    // TODO: New streams will be missing if created after the subscription. Write code to handle later
-    // TODO: Create a list of exiting devices in sqsConsumer and consume here
-    public async subscribeToAllStreams(callback: (streamId: string, message: string) => void) {
+    private processMessages(streamKey: string, messages: xReadMessage[], callback: (streamId: string, message: StreamDevLocationUpdate) => void) {
+        const lastMessage = messages[messages.length-1];
+        const str = JSON.stringify(lastMessage);
+        console.log(`Calling callback streamKey:${streamKey}, id: ${lastMessage.id}, message:${str}`);
+
+        const payload = this.getPayload(streamKey, lastMessage.message);
+        this.cacheLastValues.set(streamKey, payload);
+        callback(streamKey, payload);
+        return lastMessage.id;
+    }
+
+    private getPayload(streamKey: string, message: StreamDev) : StreamDevLocationUpdate {
+        const deviceId = streamKey.split(':')[1];
+        // Stream STREAMDEV:test-001:lafleet/devices/location/+/streaming received message
+        //{ "dts":"1660234507577","sts":"1660234507777","wts":"1660234507977","rts":"1660234508078",
+        //  "seq":"25","lng":"-70.07602263185998","lat":"48.994533368139976","alt":"15.825645368139975",
+        //  "h3r15":"8f0e4b64016b653", "state": "ACTIVE" }
+        const payload: StreamDevLocationUpdate = {
+            deviceId: deviceId, dts: message.dts, seq: message.seq,
+            lng: message.lng, lat: message.lat, alt: message.alt,
+            h3r15: message.h3r15, state: message.state
+        };
+        return payload;
+    }
+
+    // New streams will be handled if created after the subscription
+    public async subscribeToAllStreams(callback: (streamId: string, message: StreamDevLocationUpdate) => void) {
         for (const streamKey of this.currentStreams) {
             this.subscribeToStreamKey(streamKey, callback);
         }
+    }
 
-        // TODO: Does not trigger callback (to debug)
-        for (const streamKey of this.currentStreams) {
-            const val = this.cacheLastValues.get(streamKey);
-            if (val) {
-                console.log(`Cache for key:${streamKey} is returning ${val}`);
-                callback(streamKey, val);
-            }
-        }
-
-        // TODO: Does not trigger callback (to debug)
-        for (const [streamKey, payload] of this.cacheLastValues) {
-            if (!this.currentStreams.includes(streamKey)) {
-                console.log(`Cache for key:${streamKey} has payload ${payload}`);
-                callback(streamKey, payload);
-            }
-        }
+    public getAllCachedValues() : Map<string, StreamDevLocationUpdate> {
+        return new Map(this.cacheLastValues);
     }
 
     public async aggregateDevices(h3resolution: number, h3indices : string[]) {
