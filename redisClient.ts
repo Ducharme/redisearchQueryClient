@@ -3,6 +3,7 @@ import { BaseShapeArray, H3PolygonShape, H3PolygonShapeArray, H3PolygonShapeKvp,
 import union from "@turf/union";
 import intersect from "@turf/intersect";
 import { Feature, MultiPolygon, Polygon, Position, polygon } from "@turf/turf";
+import { StreamDev } from "./deviceTypes";
 const redis = require("redis");
 const h3 = require("h3-js");
 
@@ -15,6 +16,20 @@ export interface IResults {
     [h3index:string]: number;
 }
 
+interface xReadMessage {
+    id: string;
+    message: StreamDev;
+}
+
+interface xReadMessages {
+    name: string;
+    messages: xReadMessage[];
+}
+
+type xReadResponse = xReadMessages[];
+
+export const unique = (arr: string[]) => [...new Set(arr)];
+
 export class redisClient {
 
     private readonly params = {
@@ -24,9 +39,14 @@ export class redisClient {
         }
     };
     private readonly client = redis.createClient(this.params);
-    private subscriber: any;
+    private shapeChangedSubscriber: any;
     static readonly shapeChangedChannel = "ShapeChanged";
     static readonly shapeLocKeyPrefix = "SHAPELOC:";
+    private readonly timerScanForStreams : NodeJS.Timeout;
+    private readonly currentStreams : string[] = [];
+    private streamAddedHandler: (streamId: string) => void = () => {};
+    private streamRemovedHandler: (streamId: string) => void = () => {};
+    private readonly cacheLastValues = new Map<string, string>();
 
     constructor() {
         this.client.on("connect", () => {
@@ -44,6 +64,16 @@ export class redisClient {
         this.client.on("error", function(error: any) {
             console.error(error);
         });
+
+        this.timerScanForStreams = setInterval(() => { this.scanForStreams(); }, 10*1000);
+    }
+
+    public assignAddedHandler (handler: (streamId: string) => void) {
+        this.streamAddedHandler = handler;
+    }
+
+    public assignRemovedHandler (handler: (streamId: string) => void) {
+        this.streamRemovedHandler = handler;
     }
 
     public async connect() {
@@ -54,13 +84,46 @@ export class redisClient {
         await this.client.ping();
     }
 
-    public async subscribe(callback: Function) {
-        this.subscriber = this.client.duplicate();
-        await this.subscriber.connect();
-        await this.subscriber.subscribe(redisClient.shapeChangedChannel, (message: string) => {
+    public async subscribe(callback: (message: string) => {}) {
+        this.shapeChangedSubscriber = this.client.duplicate();
+        await this.shapeChangedSubscriber.connect();
+        await this.shapeChangedSubscriber.subscribe(redisClient.shapeChangedChannel, (message: string) => {
             console.log(`Message received on channel ${redisClient.shapeChangedChannel}: ${message}`);
             callback(message); // callback function expected ShapeType string as single argument
         });
+    }
+
+    private async scanForStreams() {
+        console.log("scanForStreams() begins");
+        const allStreamKeys = await this.getAllStreamKeys();
+        const concatValues = allStreamKeys.concat(this.currentStreams);
+        const distinctValues = unique(concatValues);
+
+        var added: string[] = [];
+        var removed: string[] = [];
+        for (const distinctValue of distinctValues) {
+            const indexInCurrentStreams = this.currentStreams.indexOf(distinctValue);
+            const indexInAllStreamKeys = allStreamKeys.indexOf(distinctValue);
+            if (indexInCurrentStreams >= 0) {
+                if (indexInAllStreamKeys < 0) {
+                    removed.push(distinctValue);
+                }
+            } else if (indexInAllStreamKeys >= 0) {
+                added.push(distinctValue);
+            }
+        }
+
+        added.forEach((s: string) => {
+            this.streamAddedHandler.call(this, s);
+            this.currentStreams.push(s);
+        });
+
+        removed.forEach((s: string) => {
+            this.streamRemovedHandler.call(this, s);
+            const index = this.currentStreams.indexOf(s);
+            this.currentStreams.splice(index, 1);
+        });
+        console.log("scanForStreams() ends");
     }
 
     public async getAllStreamKeys() {
@@ -75,24 +138,31 @@ export class redisClient {
         return keys;
     }
 
-    public async subscribeToStreamKey(key: string, callback: Function) {
+    public async subscribeToStreamKey(key: string, callback: (streamId: string, message: string) => void) {
+        console.log("subscribeToStreamKey: " + key);
         while (true) {
+            let lastId = "$"; // Start streaming from now, otherwise use 0-0 (would be too much for small clients)
             try {
-                let response = await this.client.xRead(
+                let response : xReadResponse = await this.client.xRead(
                     //commandOptions( { isolated: true }),
-                    [{ key: key, id: '$' }],
-                    //{ COUNT: 6, BLOCK: 500 }
-                    { COUNT: 1, BLOCK: 100 }
+                    [{ key: key, id: lastId }], //[{ key: key, id: lastId }],
+                    { COUNT: 1, BLOCK: 100 } //{ COUNT: 6, BLOCK: 500 }
                 ).catch((err: any) => console.log(`subscribeToStreamKey failed for ${key} -> ${err}`));
-                
+
                 if (response) {
                     // Response is an array of streams, each containing an array of entries:
                     // [{"name": "mystream", "messages": [{"id": "1642088708425-0", "message": {"num":"999"}}]}]
-                    const msg = JSON.stringify(response[0].messages[0].message);
-                    callback(response[0].name, msg);
+                    for (const entry of response) {
+                        const lastMessage = entry.messages[entry.messages.length-1];
+                        const json = lastMessage as xReadMessage;
+                        const str = JSON.stringify(json.message);
+                        console.log(`Calling callback streamId:${entry.name}, id: ${lastMessage.id}, message:${str}`);
+                        this.cacheLastValues.set(key, str);
+                        callback(entry.name, str);
+                        lastId = lastMessage.id;
+                    }
                 } else {
                     // Response is null, we have read everything that is in the stream right now...
-                    //console.log('No new stream entries.');
                 }
             } catch (err) {
                 console.error(err);
@@ -101,10 +171,27 @@ export class redisClient {
     }
 
     // TODO: New streams will be missing if created after the subscription. Write code to handle later
-    public async subscribeToAllStreams(callback: Function) {
-        var keys = await this.getAllStreamKeys();
-        for (const key of keys) {
-            this.subscribeToStreamKey(key, callback);
+    // TODO: Create a list of exiting devices in sqsConsumer and consume here
+    public async subscribeToAllStreams(callback: (streamId: string, message: string) => void) {
+        for (const streamKey of this.currentStreams) {
+            this.subscribeToStreamKey(streamKey, callback);
+        }
+
+        // TODO: Does not trigger callback (to debug)
+        for (const streamKey of this.currentStreams) {
+            const val = this.cacheLastValues.get(streamKey);
+            if (val) {
+                console.log(`Cache for key:${streamKey} is returning ${val}`);
+                callback(streamKey, val);
+            }
+        }
+
+        // TODO: Does not trigger callback (to debug)
+        for (const [streamKey, payload] of this.cacheLastValues) {
+            if (!this.currentStreams.includes(streamKey)) {
+                console.log(`Cache for key:${streamKey} has payload ${payload}`);
+                callback(streamKey, payload);
+            }
         }
     }
 
@@ -146,7 +233,7 @@ export class redisClient {
       return results;
     }
 
-    public async searchDevices (longitude: number, latitude : number, distance: number, distanceUnit: string) {
+    public async searchDevices (longitude: number, latitude: number, distance: number, distanceUnit: string) {
         //FT.SEARCH topic-lnglat-idx "@topic:topic_1 @lnglat:[-73 45 100 km]" NOCONTENT
         //var list = await redisClient.call('FT.SEARCH', 'topic-lnglat-idx', filter, 'NOCONTENT', 'LIMIT', REDIS_LIMIT_OFFSET, REDIS_LIMIT_COUNT,
         var lnglatFilter = `@lnglat:[ ${longitude} ${latitude} ${distance} ${distanceUnit} ]`;
@@ -479,5 +566,9 @@ export class redisClient {
         }
 
         return shapes;
+    }
+
+    public shutdown () {
+        clearInterval(this.timerScanForStreams);
     }
 }

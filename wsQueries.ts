@@ -1,12 +1,32 @@
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import { redisClient } from "./redisClient";
 import { v4 as uuidv4 } from 'uuid';
+import { StreamDevLocationUpdate } from './deviceTypes';
+
+interface ConnectionMetadata {
+  id: string;
+  isAlive: boolean;
+  streams: string[]
+}
+
+// {'type': 'subscriptionRequest', 'streams': ['STREAMDEV:claude1', 'STREAMDEV:claude2']}
+// {'type': 'subscriptionToAllRequest'}
+interface SubscriptionRequest {
+  type: string;
+  streams?: string[];
+}
+
+interface SubscriptionResponse extends SubscriptionRequest {
+  type: string;
+  streams?: string[];
+  status: number;
+}
 
 export class wsQueries {
 
   private readonly wss : WebSocketServer;
   private readonly heartbeatInterval : NodeJS.Timeout;
-  private readonly pingInterval = 30000;
+  private readonly pingInterval = 30 * 1000;
   private readonly rec: redisClient;
 
   readonly CLOSED: number = 3;
@@ -14,27 +34,44 @@ export class wsQueries {
   readonly CONNECTING: number = 0;
   readonly OPEN: number = 1;
 
-  private clients = new Map();
-  private subscriptions = new Map();
-  private subscriptionsToAll = new Map();
+  private clients = new Map<WebSocket, ConnectionMetadata>();
+  private subscriptions = new Map<string, string[]>(); // streamKey, subscribers(clientMetadataIds)
+  private subscriptionsToAll = new Map<string, string[]>();
   private readonly validMessageTypes = ['subscriptionRequest', 'subscriptionToAllRequest'];
-
+  private readonly processMessageHandler = (s: string, m: string) => this.processMessage(s, m);
+  private readonly AllStreamKeys = '*';
+  
   constructor (wss: WebSocketServer, rc: redisClient) {
     this.wss = wss;
     this.rec = rc;
 
     this.heartbeatInterval = setInterval(() => {this.ping();}, this.pingInterval);
+    this.rec.assignAddedHandler(this.newStreamCreated.bind(this));
+    this.rec.assignRemovedHandler(this.oldStreamRemoved.bind(this));
+  }
+
+  public newStreamCreated(streamId: string) {
+    this.rec.subscribeToStreamKey(streamId, this.processMessageHandler);
+  }
+
+  public oldStreamRemoved(streamId: string) {
+    this.unsubscribeToStreamKey(streamId);
   }
 
   private heartbeat(ws: any) {
     const metadata = this.clients.get(ws);
-    metadata.isAlive = true;
-    console.log(`Pong ${metadata.id}`);
+    if (metadata) {
+      metadata.isAlive = true;
+      console.log(`Pong ${metadata.id}`);
+    }
   }
 
   private async ping() {
     for (const ws of this.wss.clients) {
       const metadata = this.clients.get(ws);
+      if (!metadata)
+        continue;
+
       if (metadata.isAlive === false) {
         console.log(`Terminating connection because client ${metadata.id} is not alive`);
         ws.terminate();
@@ -51,7 +88,7 @@ export class wsQueries {
     const id = uuidv4();
     var isAlive = true;
     var subscribedStreams: string[] = [];
-    const metadata = { 'id': id, 'isAlive': isAlive, 'streams': subscribedStreams };
+    const metadata : ConnectionMetadata = { id: id, isAlive: isAlive, streams: subscribedStreams };
     this.clients.set(ws, metadata);
   
     ws.send('Hi from server');
@@ -67,10 +104,10 @@ export class wsQueries {
         console.log(`Client ${id} received message => ${messageAsString}`);
   
         // Subscribe to STREAMDEV last update $
-        const message = JSON.parse(messageAsString);
-        if (message.type === undefined || message.type === null || !this.validMessageTypes.includes(message.type)) {
+        const message = JSON.parse(messageAsString) as SubscriptionRequest;
+        if (!message.type || !this.validMessageTypes.includes(message.type)) {
           console.warn(`Client ${id} sent an unknown message type, ignoring`);
-          var payload = {'type': 'subscriptionRequest', 'streams': [], 'status': 404};
+          var payload : SubscriptionResponse = {type: 'subscriptionRequest', streams: [], status: 404};
           var str = JSON.stringify(payload);
           ws.send(str);
           return;
@@ -79,15 +116,15 @@ export class wsQueries {
         // NOTE: https://stackoverflow.com/questions/20279484/how-to-access-the-correct-this-inside-a-callback
         switch(message.type) {
           case 'subscriptionRequest':
-            if (message.streams !== undefined) {
-              for (const stream of message.streams) {
-                var subscribers : string[] = this.subscriptions.get(stream);
-                if (subscribers === undefined) {
+            if (message.streams) {
+              for (const streamKey of message.streams) {
+                var subscribers : string[] | undefined = this.subscriptions.get(streamKey);
+                if (!subscribers) {
                   var newSubscribers : string[] = [];
                   newSubscribers.push(id);
-                  this.subscriptions.set(stream, newSubscribers);
+                  this.subscriptions.set(streamKey, newSubscribers);
 
-                  this.rec.subscribeToStreamKey(stream, (s: string, m: string) => this.processMessage(s, m));
+                  this.rec.subscribeToStreamKey(streamKey, (s: string, m: string) => this.processMessage(s, m));
                 } else if (!subscribers.includes(id)) {
                   subscribers.push(id);
                 }
@@ -95,11 +132,11 @@ export class wsQueries {
             }
             break;
           case 'subscriptionToAllRequest':
-            var subscribers : string[] = this.subscriptionsToAll.get('*');
-            if (subscribers === undefined) {
+            var subscribers : string[] | undefined = this.subscriptionsToAll.get(this.AllStreamKeys);
+            if (!subscribers) {
               var newSubscribers : string[] = [];
               newSubscribers.push(id);
-              this.subscriptionsToAll.set('*', newSubscribers);
+              this.subscriptionsToAll.set(this.AllStreamKeys, newSubscribers);
               this.rec.subscribeToAllStreams((s: string, m: string) => this.processMessage(s, m));
             } else if (!subscribers.includes(id)) {
               subscribers.push(id);
@@ -118,7 +155,7 @@ export class wsQueries {
   
       if (this.subscriptions.keys.length > 0) {
         for (const [_stream, subs] of this.subscriptions) {
-          if (subs !== undefined) {
+          if (subs) {
             const index = subs.indexOf(metadata.id);
             if (index > -1) {
               subs.splice(index, 1);
@@ -129,7 +166,7 @@ export class wsQueries {
         
       if (this.subscriptionsToAll.keys.length > 0) {
         for (const [_stream, subs] of this.subscriptionsToAll) {
-          if (subs !== undefined) {
+          if (subs) {
             const index = subs.indexOf(metadata.id);
             if (index > -1) {
               subs.splice(index, 1);
@@ -138,13 +175,23 @@ export class wsQueries {
         }
       }
   
-      // TODO: Future optimization -> Remove server subscription to the stream(s) if no more client is listening 
-  
+      // TODO: Future optimization -> Remove server subscription to the stream(s) if no more client is listening
     });
+  }
+
+  private unsubscribeToStreamKey(streamKey: string) {
+    if (this.subscriptions.keys.length > 0) {
+      this.subscriptions.delete(streamKey);
+    }
+      
+    if (this.subscriptionsToAll.keys.length > 0) {
+      this.subscriptionsToAll.delete(streamKey);
+    }
   }
 
   public tearDown() {
     clearInterval(this.heartbeatInterval);
+    this.rec.shutdown();
   }
 
   public processMessage(stream: string, message: string) {
@@ -163,19 +210,19 @@ export class wsQueries {
     const lng = parseFloat(msgJson.lng);
     const lat = parseFloat(msgJson.lat);
     const alt = parseFloat(msgJson.alt);
-  
+
     // Stream STREAMDEV:test-001:lafleet/devices/location/+/streaming received message
     //{ "dts":"1660234507577","sts":"1660234507777","wts":"1660234507977","rts":"1660234508078",
     //  "seq":"25","lng":"-70.07602263185998","lat":"48.994533368139976","alt":"15.825645368139975",
-    //  "h3r15":"8f0e4b64016b653"}
-    var payload = {'deviceId': deviceId, 'dts': dts, 'seq': seq,
-      'lng': lng, 'lat': lat, 'alt': alt, 'h3r15': msgJson.h3r15};
+    //  "h3r15":"8f0e4b64016b653", "state": "ACTIVE" }
+    var payload : StreamDevLocationUpdate = {deviceId: deviceId, dts: dts, seq: seq,
+      lng: lng, lat: lat, alt: alt, h3r15: msgJson.h3r15, state: msgJson.state};
     var payloadAsString = JSON.stringify(payload);
     
     var subscribersNotified : string[] = [];
 
-    var allSubscribers : string[] = this.subscriptionsToAll.get('*');
-    if (allSubscribers !== undefined && allSubscribers.length > 0) {
+    var allSubscribers : string[] | undefined = this.subscriptionsToAll.get(this.AllStreamKeys);
+    if (allSubscribers && allSubscribers.length > 0) {
       for (const subscriber of allSubscribers) {
         for (let [ws, metadata] of this.clients) {
           if (subscriber == metadata.id) {
@@ -186,8 +233,8 @@ export class wsQueries {
       }
     }
   
-    var subscribers : string[] = this.subscriptions.get(stream);
-    if (subscribers !== undefined && subscribers.length > 0) {
+    var subscribers : string[] | undefined = this.subscriptions.get(stream);
+    if (subscribers && subscribers.length > 0) {
       for (const subscriber of subscribers) {
         for (let [ws, metadata] of this.clients) {
           if (subscriber == metadata.id) {

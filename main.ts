@@ -27,6 +27,25 @@ server.listen(SERVER_PORT, () => {
 }).on("error", (error: any) => console.error(error));
 
 const run = async () => {
+  // do app specific cleaning before exiting
+  process.on('exit', function () {
+    console.log('exiting...');
+    rec.shutdown();
+  });
+
+  // catch ctrl+c event and exit normally
+  process.on('SIGINT', function () {
+    console.log('Ctrl-C...');
+    rec.shutdown();
+  });
+
+  //catch uncaught exceptions, trace, then exit normally
+  process.on('uncaughtException', function(e) {
+    console.log('Uncaught Exception...');
+    console.log(e.stack);
+    rec.shutdown();
+  });
+
   await rec.connect();
   await rec.ping();
 
