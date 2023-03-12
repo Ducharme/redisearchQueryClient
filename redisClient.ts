@@ -3,7 +3,7 @@ import { BaseShapeArray, H3PolygonShape, H3PolygonShapeArray, H3PolygonShapeKvp,
 import union from "@turf/union";
 import intersect from "@turf/intersect";
 import { Feature, MultiPolygon, Polygon, Position, polygon } from "@turf/turf";
-import { StreamDev, StreamDevLocationUpdate } from "./deviceTypes";
+import { DevLocUpdateCallback, StreamChangedHandler as StreamListChangedHandler, StreamDev, StreamDevLocationUpdate } from "./deviceTypes";
 const redis = require("redis");
 const h3 = require("h3-js");
 
@@ -46,9 +46,10 @@ export class redisClient {
     static readonly shapeLocKeyPrefix = "SHAPELOC:";
     private readonly timerScanForStreams : NodeJS.Timeout;
     private readonly currentStreams : string[] = [];
-    private streamAddedHandler: (streamId: string) => void = () => {};
-    private streamRemovedHandler: (streamId: string) => void = () => {};
+    private readonly subscribedStreams : string[] = [];
     private readonly cacheLastValues = new Map<string, StreamDevLocationUpdate>();
+    private streamAddedHandler: StreamListChangedHandler = () => {};
+    private streamRemovedHandler: StreamListChangedHandler = () => {};
 
     constructor() {
         this.client.on("connect", () => {
@@ -70,11 +71,11 @@ export class redisClient {
         this.timerScanForStreams = setInterval(() => { this.scanForStreams(); }, 10*1000);
     }
 
-    public assignAddedHandler (handler: (streamId: string) => void) {
+    public assignAddedHandler (handler: StreamListChangedHandler) {
         this.streamAddedHandler = handler;
     }
 
-    public assignRemovedHandler (handler: (streamId: string) => void) {
+    public assignRemovedHandler (handler: StreamListChangedHandler) {
         this.streamRemovedHandler = handler;
     }
 
@@ -96,15 +97,15 @@ export class redisClient {
     }
 
     private async scanForStreams() {
-        console.log("scanForStreams() begins");
         const allStreamKeys = await this.getAllStreamKeys();
-        const concatValues = allStreamKeys.concat(this.currentStreams);
+        const curStreamsCopy = [...this.currentStreams];
+        const concatValues = allStreamKeys.concat();
         const distinctValues = unique(concatValues);
 
         var added: string[] = [];
         var removed: string[] = [];
         for (const distinctValue of distinctValues) {
-            const indexInCurrentStreams = this.currentStreams.indexOf(distinctValue);
+            const indexInCurrentStreams = curStreamsCopy.indexOf(distinctValue);
             const indexInAllStreamKeys = allStreamKeys.indexOf(distinctValue);
             if (indexInCurrentStreams >= 0) {
                 if (indexInAllStreamKeys < 0) {
@@ -116,16 +117,17 @@ export class redisClient {
         }
 
         added.forEach((s: string) => {
-            this.streamAddedHandler.call(this, s);
-            this.currentStreams.push(s);
+            if (!this.currentStreams.includes(s))
+                this.currentStreams.push(s);
+            this.streamAddedHandler(s);
         });
 
         removed.forEach((s: string) => {
-            this.streamRemovedHandler.call(this, s);
             const index = this.currentStreams.indexOf(s);
-            this.currentStreams.splice(index, 1);
+            if (index >= 0)
+                this.currentStreams.splice(index, 1);
+            this.streamRemovedHandler(s);
         });
-        console.log("scanForStreams() ends");
     }
 
     public async getAllStreamKeys() {
@@ -140,12 +142,21 @@ export class redisClient {
         return keys;
     }
 
-    public async subscribeToStreamKey(streamKey: string, callback: (streamId: string, message: StreamDevLocationUpdate) => void) {
+    public async subscribeToStreamKey(streamKey: string, callback: DevLocUpdateCallback) {
+        if (this.subscribedStreams.includes(streamKey)) {
+            console.log(`subscribeToStreamKey(${streamKey}) already exists, skipping`);
+            return;
+        } else {
+            console.log(`subscribeToStreamKey(${streamKey}, ${callback})`);
+            this.subscribedStreams.push(streamKey);
+        }
+        
         // To get just the last element added into the stream it is enough to send:
         // XREVRANGE key end start [COUNT count]
         // XREVRANGE somestream + - COUNT 1
         let xrr = await this.client.xRevRange(streamKey, "+", "-", { COUNT: 1 });
         var xrrr = xrr as xRevRangeResponse;
+        console.log("xRevRange");
         var lastId = this.processMessages(streamKey, xrrr, callback);
 
         while (true) {
@@ -161,6 +172,7 @@ export class redisClient {
                     // Response is an array of streams, each containing an array of entries:
                     // [{"name": "mystream", "messages": [{"id": "1642088708425-0", "message": {"num":"999"}}]}]
                     for (const entry of response) {
+                        console.log("xRead");
                         lastId = this.processMessages(streamKey, entry.messages, callback);
                     }
                 } else {
@@ -172,7 +184,7 @@ export class redisClient {
         }
     }
 
-    private processMessages(streamKey: string, messages: xReadMessage[], callback: (streamId: string, message: StreamDevLocationUpdate) => void) {
+    private processMessages(streamKey: string, messages: xReadMessage[], callback: DevLocUpdateCallback) {
         const lastMessage = messages[messages.length-1];
         const str = JSON.stringify(lastMessage);
         console.log(`Calling callback streamKey:${streamKey}, id: ${lastMessage.id}, message:${str}`);
@@ -190,15 +202,20 @@ export class redisClient {
         //  "seq":"25","lng":"-70.07602263185998","lat":"48.994533368139976","alt":"15.825645368139975",
         //  "h3r15":"8f0e4b64016b653", "state": "ACTIVE" }
         const payload: StreamDevLocationUpdate = {
-            deviceId: deviceId, dts: message.dts, seq: message.seq,
-            lng: message.lng, lat: message.lat, alt: message.alt,
-            h3r15: message.h3r15, state: message.state
+            deviceId: deviceId,
+            dts: Number(message.dts),
+            seq: Number(message.seq),
+            lng: Number(message.lng),
+            lat: Number(message.lat),
+            alt: Number(message.alt),
+            h3r15: message.h3r15,
+            state: message.state
         };
         return payload;
     }
 
     // New streams will be handled if created after the subscription
-    public async subscribeToAllStreams(callback: (streamId: string, message: StreamDevLocationUpdate) => void) {
+    public async subscribeToAllStreams(callback: DevLocUpdateCallback) {
         for (const streamKey of this.currentStreams) {
             this.subscribeToStreamKey(streamKey, callback);
         }
